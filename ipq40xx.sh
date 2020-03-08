@@ -42,17 +42,17 @@ set_mask_index bam_dma 2 4
 set_mask_index bam_dma 3 8
 
 #ethernet
-set_mask_pattern eth 2
+set_mask_pattern eth 4
 # set_mask_range eth_tx 1 8 2
 # set_mask_range eth_tx 9 16 4
 # set_mask_range eth_rx 1 2 2
 # set_mask_range eth_rx 3 4 4
 
 #soc wifi
-set_mask_pattern ath10k_ahb 8
+set_mask_pattern ath10k_ahb 4
 
 #pcie
-set_mask_pattern qcom-pcie-msi 2
+set_mask_pattern qcom-pcie-msi 4
 
 #usb
 set_mask_pattern usb 8
