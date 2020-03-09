@@ -20,6 +20,7 @@ CPU核心与Mask遮罩值的对应关系如下所示：
 | ipq40xx/lean-default.sh | 高通IPQ4018/4019/... | Lean固件中的默认配置 |
 | mt7621/openwrt.sh | 联发科mt7621 | 针对有线与无线转发优化的配置 |
 | mt7621/lean-default.sh | 联发科mt7621 | Lean固件中的默认配置 |
+| bcm53xx/openwrt.sh | 博通bcm4708/4709 | 针对有线与无线转发优化的配置 |
 ## 状态
 目前只基于Asus RT-ACRH17测试了IPQ4019平台。
 ### 测试场景
