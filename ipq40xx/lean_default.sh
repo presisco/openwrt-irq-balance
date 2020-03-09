@@ -74,8 +74,10 @@ adjust_eth_queue() {
 	for epath in /sys/class/net/eth[0-9]*; do
 		test -e $epath || break
 		echo $epath | grep -q "\." && continue
+		echo `detecting $epath`
 		eth=`basename $epath`
 		for exps in /sys/class/net/$eth/queues/rx-[0-9]*/rps_cpus; do
+			echo "optimizing queue"
 			test -e $exps || break
 			echo $cpu > $exps
 			echo 256 > `dirname $exps`/rps_flow_cnt
@@ -87,5 +89,3 @@ adjust_eth_queue() {
 }
 
 adjust_eth_queue
-adjust_edma_smp_affinity
-adjust_radio_smp_affinity
