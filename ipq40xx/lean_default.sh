@@ -89,3 +89,5 @@ adjust_eth_queue() {
 }
 
 adjust_eth_queue
+adjust_edma_smp_affinity
+adjust_radio_smp_affinity
