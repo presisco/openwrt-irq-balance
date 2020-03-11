@@ -197,7 +197,7 @@ set_irq_mask() {
 	set_mask_pattern usb $usb_core
 }
 
-boot() {
+start() {
 	assign_queues
 	set_irq_mask
 }
