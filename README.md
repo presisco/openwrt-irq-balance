@@ -11,7 +11,7 @@ OpenWrt默认、Lean OpenWrt默认、使用irqbalance及转发优化版本的核
 | 网络中断tx | CPU0123 | 交替 | 交替 | CPU12反向交替 |
 | 无线ahb | CPU0123 | CPU2 | CPU2 | CPU3 |
 | 无线pcie | CPU0123 | CPU3(设置无效) | CPU0 | CPU3 |
-| 其他(usb,dma,gpio...) | CPU0123 | CPU0/CPU2/CPU3 | CPU0 |
+| 其他(usb,dma,gpio...) | CPU0123 | CPU0123 | CPU0/CPU2/CPU3 | CPU0 |
 
 CPU123表示使用CPU1、CPU2、CPU3均可。为了提升局部性以提升缓存效率，中断往往被固定在所有指定CPU中最小的那个，在缺少硬件NAT与千兆网的情况下很容易占满1个CPU核心而其他核心空闲，出现性能瓶颈。因此需要调整中断与CPU的对应关系。
 ## 结构
