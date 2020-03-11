@@ -180,7 +180,7 @@ set_mask_interleave_reverse() {
 # set irq mask -- /sys/irq/*/smp_affinity
 set_irq_mask() {
 	#dma
-	set_mask_interleave bam_dma 2 3 1
+	set_mask_pattern bam_dma $usb_core
 	
 	#ethernet
 	local high_mask=`printf "%x" $((eth_core_offset<<(eth_core_count - 1)))`
