@@ -3,6 +3,7 @@
 通过均衡分配用于处理中断的CPU核心，提升系统的吞吐性能
 ## 原理
 OpenWrt默认、Lean OpenWrt默认、使用irqbalance及转发优化版本的核心分配情况如下(IPQ40xx)：
+
 | 中断 | OpenWrt | Lean | irqbalance| 转发优化 | 
 | 网络队列rx | CPU123 | CPU0123 | CPU123 | CPU12交替 |
 | 网络队列tx | 交替 | 交替 | 交替 | CPU12交替 |
