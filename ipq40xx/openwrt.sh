@@ -181,9 +181,9 @@ set_mask_interleave_reverse() {
 set_irq_mask() {
 	#dma
 	set_mask_interleave bam_dma 2 3 1
-
-	local high_mask=`expr $eth_core_offset \* 2`
+	
 	#ethernet
+	local high_mask=`printf "%x" $((eth_core_offset<<(eth_core_count - 1)))`
 	set_mask_interleave_reverse eth_tx $high_mask $eth_core_count 4
 	set_mask_interleave_reverse eth_rx $high_mask $eth_core_count 1
 
