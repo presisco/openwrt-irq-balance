@@ -4,200 +4,189 @@
 START=99
 STOP=98
 
-eth_core_offset=2
-eth_core_count=2
-wifi_core=8
-usb_core=1
+rps_flow_cnt=4096
+core_count=$(grep -c processor /proc/cpuinfo)
+rps_sock_flow_ent=`expr $core_count \* $rps_flow_cnt`
+queue_cores="0 1 2"
+queue_irq_cores="1 2 0"
+eth_core="0"
+wifi_core="3"
+usb_core="0"
 
-assign_interface_round() {
-	local interface=$1
-	local cpu_offset=$2
-	local count=$3
-	
-	local index=1
-	local cpu=$cpu_offset
-	for mask in /sys/class/net/$interface/queues/rx-[0-9]*/rps_cpus
+############### util functions ###############
+
+to_hex_list() {
+	local cores=$1
+	local converted=""
+	for core in $(echo $cores | awk '{print}')
 	do
-		echo $cpu > $mask
-		echo 256 > `dirname $mask`/rps_flow_cnt
-		if [ $index -lt $count ]
-		then
-			cpu=`expr $cpu \* 2`
-			index=`expr $index + 1`
-		else
-			cpu=$cpu_offset
-			index=1
-		fi
+		local hex="$(gen_hex_mask "$core")"
+		converted="$converted $hex"
 	done
-	
-	index=1
-	cpu=$cpu_offset
-	for mask in /sys/class/net/$interface/queues/tx-[0-9]*/xps_cpus
+	echo `echo $converted | sed 's/^ *//'`
+}
+
+gen_hex_mask() {
+	local cores=$1
+	local mask=0
+	for core in $(echo $cores | awk '{print}')
 	do
-		echo $cpu > $mask
-		if [ $index -lt $count ]
-		then
-			cpu=`expr $cpu \* 2`
-			index=`expr $index + 1`
-		else
-			cpu=$cpu_offset
-			index=1
-		fi
+		local hex="$((1 << $core))"
+		hex="$(printf %x "$hex")"
+		let "mask = mask + hex"
+	done
+	echo "$mask"
+}
+
+val_at_index() {
+	local values=$1
+	local idx=$2
+	echo `echo $values | awk -v i=$idx '{print $i}'`
+}
+
+size_of_list() {
+	local list=$1
+	local spaces=`echo $list | grep -o ' ' | wc -l`
+	echo `expr $spaces + 1`
+}
+
+set_core_mask() {
+	local file=$1
+	local cores=$2
+	local mask="$(gen_hex_mask "$cores")"
+	echo $mask > $file
+}
+
+set_core_mask_round() {
+	local files=$1
+	local cores=$2
+	local step_size=$3
+	[ ! -n "$3" ] && step_size=1
+	
+	local core_count="$(size_of_list "$cores")"
+	local counter=0
+	local idx=1
+	local roof=`expr $core_count \* $step_size`
+	for file in $(echo $files | awk '{print}')
+	do
+		let "idx = counter / step_size + 1"
+		local core="$(val_at_index "$cores" $idx)"
+		set_core_mask $file $core
+		let "counter = counter + 1"
+		[ $counter -ge $roof ] && counter=0
 	done
 }
 
-assign_interface() {
+############### assign network queues ###############
+
+set_interface_round() {
 	local interface=$1
-	local cpu_mask=$2
-
-	for mask in /sys/class/net/$interface/queues/rx-[0-9]*/rps_cpus
+	local cores=$2
+	local step_size=$3
+	
+	set_core_mask_round "$(ls /sys/class/net/$interface/queues/tx-*/xps_cpus)" "$cores" $step_size
+	set_core_mask_round "$(ls /sys/class/net/$interface/queues/rx-*/rps_cpus)" "$cores" $step_size
+	
+	for file in /sys/class/net/$interface/queues/rx-[0-9]*/rps_flow_cnt
 	do
-		echo $cpu_mask > $mask
-		echo 256 > `dirname $mask`/rps_flow_cnt
-	done
-
-	for mask in /sys/class/net/$interface/queues/tx-[0-9]*/xps_cpus
-	do
-		echo $cpu_mask > $mask
+		echo $rps_flow_cnt > $file
 	done
 }
 
-assign_queues() {
-	for netpath in /sys/class/net/eth[0-9]*; do
-		eth=`basename $netpath`
-		echo "binding cpu for $eth"
+set_interface() {
+	local interface=$1
+	local cores=$2
+
+	for file in /sys/class/net/$interface/queues/rx-[0-9]*/rps_cpus
+	do
+		set_core_mask $file "$cores"
+		echo $rps_flow_cnt > `dirname $file`/rps_flow_cnt
+	done
+
+	for file in /sys/class/net/$interface/queues/tx-[0-9]*/xps_cpus
+	do
+		set_core_mask $file "$cores"
+	done
+}
+
+set_interface_queues() {
+	echo "using cpu: $queue_cores for network queues"
+	for dev in /sys/class/net/*
+	do
+		[ -d "$dev" ] || continue
 		
-		assign_interface_round $eth $eth_core_offset $eth_core_count
-
-		which ethtool > /dev/null 2>&1 && ethtool -K $eth gro on
+		local interface=`basename $dev`
+		echo "binding cpu for $interface queues"
+		
+		set_interface $interface "$queue_cores"
 	done
-
-	for netpath in /sys/class/net/wlan[0-9]*; do
-		wlan=`basename $netpath`
-		echo "binding cpu for $wlan"
-
-		assign_interface_round $wlan $wifi_core 1
+	
+	for dev in /sys/class/net/eth*
+	do
+		local eth=`basename $dev`
+		echo "enabling offload on $eth"
+		ethtool -K $eth rx-checksum on >/dev/null 2>&1
+		ethtool -K $eth tx-checksum-ip-generic on >/dev/null 2>&1 || (
+		ethtool -K $eth tx-checksum-ipv4 on >/dev/null 2>&1
+		ethtool -K $eth tx-checksum-ipv6 on >/dev/null 2>&1)
+		ethtool -K $eth tx-scatter-gather on >/dev/null 2>&1
+		ethtool -K $eth gso on >/dev/null 2>&1
+		ethtool -K $eth tso on >/dev/null 2>&1
+		ethtool -K $eth ufo on >/dev/null 2>&1
 	done
-
-	echo 1024 > /proc/sys/net/core/rps_sock_flow_entries
+	
+	echo $rps_sock_flow_ent > /proc/sys/net/core/rps_sock_flow_entries
+	sysctl -w net.core.rps_sock_flow_entries=$rps_sock_flow_ent
 }
 
-# set net interface queue mask -- /sys/class/net/eth*/queues/rx-*/rps_cpus
-set_mask() {
-	echo "set mask $2 for irq: $1"
-	echo "$2" > "/proc/irq/$1/smp_affinity"
+############### assign interrupts ###############
+set_irq_cores() {
+	local mask="$(gen_hex_mask "$2")"
+	echo "set mask $mask for irq: $1"
+	echo $mask > "/proc/irq/$1/smp_affinity"
 }
 
-set_mask_pattern() {
+set_irq_pattern() {
 	local name_pattern="$1"
-	local mask="$2"
+	local cores="$2"
 	
 	for irq in `grep "$name_pattern" /proc/interrupts | cut -d: -f1 | sed 's, *,,'`
 	do
-		set_mask $irq $mask
+		set_irq_cores $irq "$cores"
 	done
 }
 
-set_mask_index() {
-	local name_pattern="$1"
-	local index="$2"
-	local mask="$3"
-	
-	set_mask `grep -m$index "$name_pattern" /proc/interrupts | cut -d: -f1 | tail -n1 | tr -d ' '` $mask
-}
-
-set_mask_range() {
-	local name_pattern="$1"
-	local start="$2"
-	local end="$3"
-	local mask="$4"
-	
-	local count=`expr $end - $start + 1`
-	for irq in `grep "$name_pattern" /proc/interrupts | cut -d: -f1 | head -n$end | tail -n$count | sed 's, *,,'`
-	do
-		set_mask $irq $mask
-	done
-}
-
-set_mask_interleave() {
+set_irq_interleave() {
 	local name_pattern=$1
-	local cpu_offset=$2
-	local cpu_count=$3
-	local step_size=$4
+	local cores=$2
+	local step_size=$3
 	
-	local step_counter=1
-	local cpu_counter=1
-	local mask=$cpu_offset
+	local files=""
 	for irq in `grep "$name_pattern" /proc/interrupts | cut -d: -f1 | sed 's, *,,'`
 	do
-		set_mask $irq $mask
-		if [ $step_counter -eq $step_size ]
-		then
-			step_counter=1
-			if [ $cpu_counter -eq $cpu_count ]
-			then
-				mask=$cpu_offset
-				cpu_counter=1
-			else
-				mask=`expr $mask \* 2`
-				cpu_counter=`expr $cpu_counter + 1`
-			fi
-		else
-			step_counter=`expr $step_counter + 1`
-		fi
+		files="$files\
+		/proc/irq/$irq/smp_affinity"
 	done
-}
-
-set_mask_interleave_reverse() {
-	local name_pattern=$1
-	local cpu_offset=$2
-	local cpu_count=$3
-	local step_size=$4
 	
-	local step_counter=1
-	local cpu_counter=1
-	local mask=$cpu_offset
-	for irq in `grep "$name_pattern" /proc/interrupts | cut -d: -f1 | sed 's, *,,'`
-	do
-		set_mask $irq $mask
-		if [ $step_counter -eq $step_size ]
-		then
-			step_counter=1
-			if [ $cpu_counter -eq $cpu_count ]
-			then
-				mask=$cpu_offset
-				cpu_counter=1
-			else
-				mask=`expr $mask / 2`
-				cpu_counter=`expr $cpu_counter + 1`
-			fi
-		else
-			step_counter=`expr $step_counter + 1`
-		fi
-	done
+	set_core_mask_round "$files" "$cores" "$step_size"
 }
 
-# set irq mask -- /sys/irq/*/smp_affinity
-set_irq_mask() {
+set_irqs() {
 	#dma
-	set_mask_pattern bam_dma $usb_core
-	
-	#ethernet
-	local high_mask=`printf "%x" $((eth_core_offset<<(eth_core_count - 1)))`
-	set_mask_interleave_reverse eth_tx $high_mask $eth_core_count 4
-	set_mask_interleave_reverse eth_rx $high_mask $eth_core_count 1
+	set_irq_pattern bam_dma "$usb_core"
 
-	#soc wifi
-	set_mask_pattern ath10k_ahb $wifi_core
+	#ethernet
+	set_irq_interleave eth_tx "$queue_irq_cores" 4
+	set_irq_interleave eth_rx "$queue_irq_cores" 1
 
 	#pcie
-	set_mask_pattern qcom-pcie-msi $wifi_core
+	set_irq_pattern pcie "$wifi_core"
 
 	#usb
-	set_mask_pattern usb $usb_core
+	set_irq_pattern usb "$usb_core"
 }
 
 start() {
-	assign_queues
-	set_irq_mask
+	set_interface_queues
+	set_irqs
 }
