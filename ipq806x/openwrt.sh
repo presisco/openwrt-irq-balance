@@ -5,7 +5,8 @@ START=99
 STOP=98
 
 rps_flow_cnt=4096
-rps_sock_flow_ent=16384
+core_count=$(grep -c processor /proc/cpuinfo)
+rps_sock_flow_ent=`expr $core_count \* $rps_flow_cnt`
 queue_cores="0 1"
 eth_core="0"
 wifi_core="1"
@@ -29,11 +30,11 @@ gen_hex_mask() {
 	local mask=0
 	for core in $(echo $cores | awk '{print}')
 	do
-		local hex="$((1 << $core))"
-		hex="$(printf %x "$hex")"
-		let "mask = mask + hex"
+		local bit="$((1 << $core))"
+		let "mask = mask + bit"
 	done
-	echo "$mask"
+	local hex="$(printf %x "$mask")"
+	echo "$hex"
 }
 
 val_at_index() {
@@ -109,7 +110,17 @@ set_interface() {
 
 set_interface_queues() {
 	echo "using cpu: $queue_cores for network queues"
-	for dev in /sys/class/net/*
+	for dev in /sys/class/net/eth*
+	do
+		[ -d "$dev" ] || continue
+		
+		local interface=`basename $dev`
+		echo "binding cpu for $interface queues"
+		
+		set_interface $interface "$queue_cores"
+	done
+	
+	for dev in /sys/class/net/wlan*
 	do
 		[ -d "$dev" ] || continue
 		
@@ -129,6 +140,8 @@ set_interface_queues() {
 		ethtool -K $eth tx-checksum-ipv6 on >/dev/null 2>&1)
 		ethtool -K $eth tx-scatter-gather on >/dev/null 2>&1
 		ethtool -K $eth gso on >/dev/null 2>&1
+		ethtool -K $eth gro on >/dev/null 2>&1
+		ethtool -K $eth lro on >/dev/null 2>&1
 		ethtool -K $eth tso on >/dev/null 2>&1
 		ethtool -K $eth ufo on >/dev/null 2>&1
 	done

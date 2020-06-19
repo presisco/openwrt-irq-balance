@@ -8,8 +8,7 @@ rps_flow_cnt=4096
 core_count=$(grep -c processor /proc/cpuinfo)
 rps_sock_flow_ent=`expr $core_count \* $rps_flow_cnt`
 queue_cores="0 1 2"
-queue_irq_cores="1 2 0"
-eth_core="0"
+queue_irq_cores="1 2"
 wifi_core="3"
 usb_core="0"
 
@@ -31,11 +30,11 @@ gen_hex_mask() {
 	local mask=0
 	for core in $(echo $cores | awk '{print}')
 	do
-		local hex="$((1 << $core))"
-		hex="$(printf %x "$hex")"
-		let "mask = mask + hex"
+		local bit="$((1 << $core))"
+		let "mask = mask + bit"
 	done
-	echo "$mask"
+	local hex="$(printf %x "$mask")"
+	echo "$hex"
 }
 
 val_at_index() {
@@ -83,7 +82,9 @@ set_interface_round() {
 	local interface=$1
 	local cores=$2
 	local step_size=$3
+	[ ! -n "$3" ] && step_size=1
 	
+	echo "using round mask for interface: $interface, step size: $step_size"
 	set_core_mask_round "$(ls /sys/class/net/$interface/queues/tx-*/xps_cpus)" "$cores" $step_size
 	set_core_mask_round "$(ls /sys/class/net/$interface/queues/rx-*/rps_cpus)" "$cores" $step_size
 	
@@ -96,7 +97,9 @@ set_interface_round() {
 set_interface() {
 	local interface=$1
 	local cores=$2
-
+	
+	echo "using cores: $cores for interface: $interface"
+	
 	for file in /sys/class/net/$interface/queues/rx-[0-9]*/rps_cpus
 	do
 		set_core_mask $file "$cores"
@@ -111,12 +114,20 @@ set_interface() {
 
 set_interface_queues() {
 	echo "using cpu: $queue_cores for network queues"
-	for dev in /sys/class/net/*
+	for dev in /sys/class/net/eth*
 	do
 		[ -d "$dev" ] || continue
 		
 		local interface=`basename $dev`
-		echo "binding cpu for $interface queues"
+		
+		set_interface $interface "$queue_cores"
+	done
+
+	for dev in /sys/class/net/wlan*
+	do
+		[ -d "$dev" ] || continue
+		
+		local interface=`basename $dev`
 		
 		set_interface $interface "$queue_cores"
 	done
@@ -131,6 +142,8 @@ set_interface_queues() {
 		ethtool -K $eth tx-checksum-ipv6 on >/dev/null 2>&1)
 		ethtool -K $eth tx-scatter-gather on >/dev/null 2>&1
 		ethtool -K $eth gso on >/dev/null 2>&1
+		ethtool -K $eth gro on >/dev/null 2>&1
+		ethtool -K $eth lro on >/dev/null 2>&1
 		ethtool -K $eth tso on >/dev/null 2>&1
 		ethtool -K $eth ufo on >/dev/null 2>&1
 	done
