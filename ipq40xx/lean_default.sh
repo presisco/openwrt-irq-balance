@@ -74,7 +74,7 @@ adjust_eth_queue() {
 	for epath in /sys/class/net/eth[0-9]*; do
 		test -e $epath || break
 		echo $epath | grep -q "\." && continue
-		echo `detecting $epath`
+		echo "detecting $epath"
 		eth=`basename $epath`
 		for exps in /sys/class/net/$eth/queues/rx-[0-9]*/rps_cpus; do
 			echo "optimizing queue"
